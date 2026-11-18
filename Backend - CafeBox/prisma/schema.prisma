@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model ZonaCobertura {
+  ciudad String @id @db.VarChar(80)
+
+  @@map("zonas_cobertura")
+}
+
+model Cliente {
+  id        String  @id @db.Char(36)
+  nombre    String  @db.VarChar(200)
+  ciudad    String  @db.VarChar(80)
+  direccion String? @db.VarChar(300)
+  telefono  String? @db.VarChar(20)
+
+  pagoTitular  String? @map("pago_titular") @db.VarChar(120)
+  pagoUltimos4 String? @map("pago_ultimos4") @db.Char(4)
+
+  creadoEn DateTime @map("creado_en") @db.DateTime(3)
+
+  usuario       Usuario?
+  suscripciones Suscripcion[]
+
+  @@map("clientes")
+}
+
+model Usuario {
+  id             String   @id @db.Char(36)
+  correo         String   @unique(map: "usuarios_correo_unico") @db.VarChar(255)
+
+  contrasenaHash String   @map("contrasena_hash") @db.VarChar(100)
+  rol            String   @db.VarChar(10)
+
+  clienteId      String?  @unique(map: "usuarios_cliente_unico") @map("cliente_id") @db.Char(36)
+  creadoEn       DateTime @map("creado_en") @db.DateTime(3)
+
+  cliente Cliente? @relation(fields: [clienteId], references: [id])
+
+  @@map("usuarios")
+}
+
+model Producto {
+  id             String  @id @db.Char(36)
+  nombre         String  @db.VarChar(200)
+  origen         String  @default("") @db.VarChar(200)
+  gramaje        Int
+  precioUnitario Decimal @map("precio_unitario") @db.Decimal(10, 2)
+
+  stockDisponible Int    @map("stock_disponible")
+  activo         Boolean @default(true)
+
+  planes Plan[]
+
+  @@map("productos")
+}
+
+model Plan {
+  id               String    @id @db.Char(36)
+  nombre           String    @db.VarChar(200)
+  descripcion      String    @default("") @db.VarChar(500)
+  productoId       String    @map("producto_id") @db.Char(36)
+  bolsasPorEntrega Int       @map("bolsas_por_entrega")
+  precioCiclo      Decimal   @map("precio_ciclo") @db.Decimal(10, 2)
+  frecuencia       String    @db.VarChar(10)
+  activo           Boolean   @default(true)
+  retiradoEn       DateTime? @map("retirado_en") @db.DateTime(3)
+
+  producto        Producto       @relation(fields: [productoId], references: [id])
+  suscripciones   Suscripcion[]
+  entregas        Entrega[]
+  cambiosAnterior CambioDePlan[] @relation("planAnterior")
+  cambiosNuevo    CambioDePlan[] @relation("planNuevo")
+
+  @@index([productoId], map: "planes_producto_idx")
+  @@map("planes")
+}
+
+model Suscripcion {
+  id        String @id @db.Char(36)
+  clienteId String @map("cliente_id") @db.Char(36)
+  planId    String @map("plan_id") @db.Char(36)
+  estado    String @db.VarChar(12)
+
+  fechaInicio DateTime @map("fecha_inicio") @db.Date
+
+  diaEntregaPreferido Int @map("dia_entrega_preferido") @db.TinyInt
+
+  direccionEntrega String @map("direccion_entrega") @db.VarChar(300)
+  ciudad           String @db.VarChar(80)
+
+  ciclosGenerados Int @default(0) @map("ciclos_generados")
+
+  pausadaDesde          DateTime? @map("pausada_desde") @db.Date
+  pausadaHasta          DateTime? @map("pausada_hasta") @db.Date
+  canceladaEn           DateTime? @map("cancelada_en") @db.DateTime(3)
+  omisionesConsecutivas Int       @default(0) @map("omisiones_consecutivas")
+  creadoEn              DateTime  @map("creado_en") @db.DateTime(3)
+
+  cliente       Cliente        @relation(fields: [clienteId], references: [id])
+  plan          Plan           @relation(fields: [planId], references: [id])
+  entregas      Entrega[]
+  cobros        Cobro[]
+  pausas        Pausa[]
+  saltos        Salto[]
+  cambiosDePlan CambioDePlan[]
+
+  @@index([clienteId], map: "suscripciones_cliente_idx")
+  @@index([planId], map: "suscripciones_plan_idx")
+  @@index([estado], map: "suscripciones_estado_idx")
+  @@map("suscripciones")
+}
+
+model Entrega {
+  id            String @id @db.Char(36)
+  suscripcionId String @map("suscripcion_id") @db.Char(36)
+
+  planId        String @map("plan_id") @db.Char(36)
+
+  ciclo           Int
+  fechaProgramada DateTime @map("fecha_programada") @db.Date
+  estado          String   @db.VarChar(12)
+  bolsas          Int      @default(0)
+
+  motivoSalto  String?   @map("motivo_salto") @db.VarChar(40)
+  armadaEn     DateTime? @map("armada_en") @db.DateTime(3)
+  enviadaEn    DateTime? @map("enviada_en") @db.DateTime(3)
+  entregadaEn  DateTime? @map("entregada_en") @db.DateTime(3)
+  creadoEn     DateTime  @map("creado_en") @db.DateTime(3)
+
+  suscripcion Suscripcion @relation(fields: [suscripcionId], references: [id])
+  plan        Plan        @relation(fields: [planId], references: [id])
+  cobro       Cobro?
+
+  @@unique([suscripcionId, ciclo], map: "entregas_suscripcion_ciclo")
+  @@index([planId], map: "entregas_plan_idx")
+  @@index([fechaProgramada, estado], map: "entregas_fecha_estado_idx")
+  @@map("entregas")
+}
+
+model Cobro {
+  id            String  @id @db.Char(36)
+  suscripcionId String  @map("suscripcion_id") @db.Char(36)
+  entregaId     String? @unique(map: "cobros_entrega_unico") @map("entrega_id") @db.Char(36)
+
+  ciclo       Int
+  monto       Decimal  @db.Decimal(10, 2)
+  estado      String   @db.VarChar(12)
+  fecha       DateTime @db.Date
+  motivoFallo String?  @map("motivo_fallo") @db.VarChar(200)
+  creadoEn    DateTime @map("creado_en") @db.DateTime(3)
+
+  suscripcion Suscripcion @relation(fields: [suscripcionId], references: [id])
+  entrega     Entrega?    @relation(fields: [entregaId], references: [id])
+
+  @@unique([suscripcionId, ciclo], map: "cobros_suscripcion_ciclo")
+  @@index([estado, fecha], map: "cobros_estado_fecha_idx")
+  @@map("cobros")
+}
+
+model Pausa {
+  id            String   @id @db.Char(36)
+  suscripcionId String   @map("suscripcion_id") @db.Char(36)
+  desde         DateTime @db.Date
+  hasta         DateTime @db.Date
+  creadoEn      DateTime @map("creado_en") @db.DateTime(3)
+
+  suscripcion Suscripcion @relation(fields: [suscripcionId], references: [id])
+
+  @@index([suscripcionId], map: "pausas_suscripcion_idx")
+  @@map("pausas")
+}
+
+model Salto {
+  id            String   @id @db.Char(36)
+  suscripcionId String   @map("suscripcion_id") @db.Char(36)
+  ciclo         Int
+  creadoEn      DateTime @map("creado_en") @db.DateTime(3)
+
+  suscripcion Suscripcion @relation(fields: [suscripcionId], references: [id])
+
+  @@unique([suscripcionId, ciclo], map: "saltos_suscripcion_ciclo")
+  @@map("saltos")
+}
+
+model CambioDePlan {
+  id             String @id @db.Char(36)
+  suscripcionId  String @map("suscripcion_id") @db.Char(36)
+  planAnteriorId String @map("plan_anterior_id") @db.Char(36)
+  planNuevoId    String @map("plan_nuevo_id") @db.Char(36)
+
+  cicloAplica  Int       @map("ciclo_aplica")
+  estado       String    @db.VarChar(12)
+  solicitadoEn DateTime  @map("solicitado_en") @db.DateTime(3)
+  resueltoEn   DateTime? @map("resuelto_en") @db.DateTime(3)
+
+  suscripcion  Suscripcion @relation(fields: [suscripcionId], references: [id])
+  planAnterior Plan        @relation("planAnterior", fields: [planAnteriorId], references: [id])
+  planNuevo    Plan        @relation("planNuevo", fields: [planNuevoId], references: [id])
+
+  @@index([suscripcionId], map: "cambios_suscripcion_idx")
+  @@index([planAnteriorId], map: "cambios_plan_anterior_idx")
+  @@index([planNuevoId], map: "cambios_plan_nuevo_idx")
+  @@index([estado], map: "cambios_estado_idx")
+  @@map("cambios_de_plan")
+}
